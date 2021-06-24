@@ -1,0 +1,97 @@
+---
+title: "Tracking Data Analysis"
+output: html_document
+---
+
+```{r}
+library(Ckmeans.1d.dp)
+library(dials)
+library(gganimate)
+library(dplyr)
+library(gbm)
+library(ggplot2)
+library(lubridate)
+library(nflfastR)
+library(purrr)
+library(randomForest)
+library(RCurl)
+library(readr)
+library(tidyverse)
+library(tidymodels)
+library(tidyr)
+library(tree)
+library(vtreat)
+library(xgboost)
+```
+
+#Load our tracking data
+```{r}
+#Function to merge all data bowl data into one data frame for route of interest
+Data_Merger <- function(Position_Group, Team) {
+  for (x in 1:17) { #loop through week by week data to get all into one file
+    week_data <- data.frame()
+    week_x    <- read.csv(paste0("week",x,".csv")) %>%
+      filter(position == Position_Group) #filter for position of interest
+    week_data <- rbind(week_data, week_x)
+  }
+  
+  players <- read.csv("players.csv")
+  games   <- read.csv("games.csv")
+  plays   <- read.csv("plays.csv")
+  
+  week_data1 <- merge(week_data, players, by = c("nflId"))
+  week_data2 <- merge(week_data1, games,  by = c("gameId"))
+  week_data3 <- merge(week_data2, plays, by = c("gameId", "playId")) %>%
+    filter(possessionTeam == Team) %>%
+    arrange(displayName.x, playId, frameId) #sort into proper order
+  
+  #make play a factor
+  week_data3$playId <- as.factor(week_data3$playId)
+  
+  #create distance from LOS
+  week_data3 <- week_data3 %>%
+    mutate(Dis_Los = ifelse(playDirection == "left" , absoluteYardlineNumber - x, x - absoluteYardlineNumber)) 
+
+  return(week_data3)
+}
+
+#Call function to get our data
+Tracking_Data <- Data_Merger("WR", "NE")
+
+```
+
+#Plot
+```{r}
+Tracking_Data %>%
+  filter(jerseyNumber == "15") %>%
+  filter(frameId <45) %>% #plays beyond frame 60 filtered out
+  filter(route != "" , route != "FLAT", route != "SCREEN") %>% #remove flat routes which can look messy
+  ggplot(aes(x = Dis_Los, y = y, group = playId)) +
+  geom_hline(yintercept = 23.3, linetype =  "dashed", alpha = .5)+ #create hashes and LOS
+  geom_hline(yintercept = 29.83, linetype =  "dashed", alpha = .5) + 
+  geom_vline(xintercept = 0, linetype =  "dashed", alpha = .5) +
+  geom_line(size = .25, color = "Dark Red") +
+  facet_wrap( ~ route) + 
+  ylim(0,53) +
+  xlab("Distance From Line of Scrimmage") +
+  theme(panel.background = element_rect(fill = "transparent")) +
+  theme_light()+
+  theme(plot.title = element_text(color="black", size=8, face="bold"))+
+  coord_cartesian(clip = "off") +
+  theme(plot.title = element_text(size = 10, face = "bold"),
+  plot.subtitle = element_text(size = 8))+
+  theme(plot.background = element_rect(fill = "gray97"))+
+  theme(panel.background = element_rect(fill = "gray97"))+
+  labs(title = "We Should Expect More Crossing Routes from NE Tight Ends This Season",
+       subtitle = "Routes Run from NE Tight Ends in 2018 ",
+       caption = "Plot: PatriotsStatsR, Data: Big Data Bowl") +
+  theme(axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank()) 
+  ggsave("test.png")
+```
+
+
+
+
+
